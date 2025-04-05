@@ -161,6 +161,12 @@ class API
             case 'get_user_preferences':
                 $this->getUserPreferences();
                 break;
+            case 'save_article_history': 
+                $this->saveArticleHistory();
+                break;
+            case 'get_article_history':
+                $this->getArticleHistory();
+                break;
             default:
                 echo json_encode(['success' => false, 'error' => '不明なアクションです']);
                 break;
@@ -174,51 +180,28 @@ class API
             // テーブルが存在しない場合のテスト対応
             $check = $this->conn->query("SHOW TABLES LIKE 'articles'");
             if ($check->rowCount() === 0) {
-                // テーブルがない場合はダミーデータを返す
+                // テーブルがない場合はダミーデータを返す（テスト用）
                 echo json_encode([
                     'success' => true,
-                    'articles' => [
-                        [
-                            'id' => 1,
-                            'title' => 'サンプル記事1',
-                            'url' => 'https://example.com/article1',
-                            'description' => 'これはサンプル記事です',
-                            'thumbnail_url' => '',
-                            'source_site' => 'サンプルサイト',
-                            'bookmark_count' => 45,
-                            'published_at' => date('Y-m-d H:i:s'),
-                            'categories' => [
-                                ['id' => 1, 'name' => '総合']
-                            ]
-                        ],
-                        [
-                            'id' => 2,
-                            'title' => 'サンプル記事2',
-                            'url' => 'https://example.com/article2',
-                            'description' => 'これは2つ目のサンプル記事です',
-                            'thumbnail_url' => '',
-                            'source_site' => 'サンプルサイト',
-                            'bookmark_count' => 32,
-                            'published_at' => date('Y-m-d H:i:s', strtotime('-1 day')),
-                            'categories' => [
-                                ['id' => 2, 'name' => 'テクノロジー']
-                            ]
-                        ]
-                    ]
+                    'articles' => $this->generateDummyArticles(20), // 常に20件のダミーデータを生成
+                    'total_count' => 100, // 合計件数情報も追加
+                    'has_more' => true    // まだ続きがあることを示す
                 ]);
                 return;
             }
 
             $category_id = isset($this->request['category_id']) ? (int)$this->request['category_id'] : null;
-            $limit = isset($this->request['limit']) ? (int)$this->request['limit'] : 20;
+            $limit = isset($this->request['limit']) ? (int)$this->request['limit'] : 60;
             $offset = isset($this->request['offset']) ? (int)$this->request['offset'] : 0;
 
-            $params = [];
-            $sql = "SELECT a.* FROM articles a ";
+            // 1. まず合計件数を取得する
+            $countSql = "SELECT COUNT(*) AS total FROM articles a ";
+            $whereClause = "";
+            $countParams = [];
 
             if ($category_id) {
-                $sql .= "JOIN article_categories ac ON a.id = ac.article_id WHERE ac.category_id = ? ";
-                $params[] = $category_id;
+                $whereClause = "WHERE a.id IN (SELECT article_id FROM article_categories WHERE category_id = ?)";
+                $countParams[] = $category_id;
             }
 
             // トップページ向けに、ユーザーの閲覧履歴から興味を予測
@@ -236,24 +219,38 @@ class API
                 $recent_categories = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
                 if (!empty($recent_categories)) {
-                    if (strpos($sql, 'WHERE') !== false) {
-                        $sql .= "AND (";
+                    if (!empty($whereClause)) {
+                        $whereClause .= " AND (";
                     } else {
-                        $sql .= "WHERE (";
+                        $whereClause = "WHERE (";
                     }
 
                     $category_conditions = [];
                     foreach ($recent_categories as $cat_id) {
                         $category_conditions[] = "a.id IN (SELECT article_id FROM article_categories WHERE category_id = ?)";
-                        $params[] = $cat_id;
+                        $countParams[] = $cat_id;
                     }
 
-                    $sql .= implode(' OR ', $category_conditions) . ")";
+                    $whereClause .= implode(' OR ', $category_conditions) . ")";
                 }
             }
 
-            // 注意: LIMITとOFFSETは値として明示的に埋め込み（プリペアドステートメントでは正しく処理されないことがある）
-            $sql .= "ORDER BY a.bookmark_count DESC, a.published_at DESC LIMIT " . $limit . " OFFSET " . $offset;
+            // 合計件数の取得
+            $countSql .= $whereClause;
+            $countStmt = $this->conn->prepare($countSql);
+            $countStmt->execute($countParams);
+            $totalCount = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
+
+            // 2. 次に実際の記事データを取得
+            $params = $countParams; // 同じパラメータを再利用
+            $sql = "SELECT a.* FROM articles a ";
+
+            if (!empty($whereClause)) {
+                $sql .= $whereClause;
+            }
+
+            // 注意: LIMITとOFFSETは値として明示的に埋め込み
+            $sql .= " ORDER BY a.bookmark_count DESC, a.published_at DESC LIMIT " . $limit . " OFFSET " . $offset;
 
             $stmt = $this->conn->prepare($sql);
             $stmt->execute($params);
@@ -271,9 +268,149 @@ class API
                 $article['categories'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
             }
 
-            echo json_encode(['success' => true, 'articles' => $articles]);
+            // 続きがあるかどうかを計算
+            $hasMore = ($offset + count($articles)) < $totalCount;
+
+            // 結果を返す
+            echo json_encode([
+                'success' => true,
+                'articles' => $articles,
+                'total_count' => $totalCount,
+                'has_more' => $hasMore
+            ]);
         } catch (PDOException $e) {
-            echo json_encode(['success' => false, 'error' => '記事取得エラー: ' . $e->getMessage()]);
+            // エラーを記録
+            error_log('SQL Error in getArticles: ' . $e->getMessage() . ', SQL: ' . (isset($sql) ? $sql : ''));
+
+            echo json_encode([
+                'success' => false,
+                'error' => '記事取得エラー: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    // ダミーデータ生成関数（テスト用）
+    private function generateDummyArticles($count = 20)
+    {
+        $articles = [];
+        $categories = [
+            ['id' => 1, 'name' => '総合'],
+            ['id' => 2, 'name' => 'テクノロジー'],
+            ['id' => 3, 'name' => 'エンタメ'],
+            ['id' => 4, 'name' => 'ビジネス'],
+            ['id' => 5, 'name' => 'スポーツ']
+        ];
+
+        $sources = ['Yahoo', 'CNN', 'BBC', '日経新聞', 'TechCrunch', 'Wired'];
+
+        for ($i = 1; $i <= $count; $i++) {
+            $offset = isset($this->request['offset']) ? (int)$this->request['offset'] : 0;
+            $id = $offset + $i;
+
+            // ランダムなカテゴリーを1～2個選択
+            $catCount = mt_rand(1, 2);
+            $selectedCats = [];
+            for ($j = 0; $j < $catCount; $j++) {
+                $selectedCats[] = $categories[mt_rand(0, count($categories) - 1)];
+            }
+
+            $articles[] = [
+                'id' => $id,
+                'title' => "サンプル記事 #{$id} - " . substr(md5(mt_rand()), 0, 8),
+                'url' => "https://example.com/article/{$id}",
+                'description' => "これはサンプル記事 #{$id} の説明文です。実際のAPIからのデータではありません。",
+                'thumbnail_url' => '',
+                'source_site' => $sources[mt_rand(0, count($sources) - 1)],
+                'bookmark_count' => mt_rand(5, 200),
+                'published_at' => date('Y-m-d H:i:s', time() - mt_rand(0, 86400 * 30)),
+                'categories' => $selectedCats
+            ];
+        }
+
+        return $articles;
+    }
+
+    // 記事閲覧履歴保存
+    private function saveArticleHistory()
+    {
+        try {
+            if (!isset($this->request['article_id'])) {
+                echo json_encode(['success' => false, 'error' => '記事IDが指定されていません']);
+                return;
+            }
+
+            $article_id = (int)$this->request['article_id'];
+
+            // テーブルが存在しない場合の対応
+            $check = $this->conn->query("SHOW TABLES LIKE 'user_article_history'");
+            if ($check->rowCount() === 0) {
+                // テーブルがない場合は成功したふりをする
+                echo json_encode(['success' => true]);
+                return;
+            }
+
+            // 既存の履歴を確認
+            $stmt = $this->conn->prepare("
+            SELECT viewed_at FROM user_article_history
+            WHERE user_id = ? AND article_id = ?
+        ");
+            $stmt->execute([$this->user_id, $article_id]);
+            $exists = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($exists) {
+                // 既に履歴がある場合は更新
+                $stmt = $this->conn->prepare("
+                UPDATE user_article_history 
+                SET viewed_at = CURRENT_TIMESTAMP
+                WHERE user_id = ? AND article_id = ?
+            ");
+                $stmt->execute([$this->user_id, $article_id]);
+            } else {
+                // 新規履歴の追加
+                $stmt = $this->conn->prepare("
+                INSERT INTO user_article_history 
+                (user_id, article_id)
+                VALUES (?, ?)
+            ");
+                $stmt->execute([$this->user_id, $article_id]);
+            }
+
+            echo json_encode(['success' => true]);
+        } catch (PDOException $e) {
+            error_log('履歴保存エラー: ' . $e->getMessage());
+            echo json_encode(['success' => false, 'error' => '履歴保存エラー: ' . $e->getMessage()]);
+        }
+    }
+
+    // 履歴取得メソッド
+    private function getArticleHistory()
+    {
+        try {
+            // テーブルが存在しない場合の対応
+            $check = $this->conn->query("SHOW TABLES LIKE 'user_article_history'");
+            if ($check->rowCount() === 0) {
+                echo json_encode(['success' => true, 'history' => []]);
+                return;
+            }
+
+            $limit = isset($this->request['limit']) ? (int)$this->request['limit'] : 10;
+
+            $stmt = $this->conn->prepare(
+                "
+                    SELECT a.id, a.title, a.url, a.source_site, a.thumbnail_url, 
+                        uah.viewed_at 
+                    FROM user_article_history uah
+                    JOIN articles a ON uah.article_id = a.id
+                    WHERE uah.user_id = ?
+                    ORDER BY uah.viewed_at DESC
+                    LIMIT " . $limit
+            );
+            $stmt->execute([$this->user_id]);
+            $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            echo json_encode(['success' => true, 'history' => $history]);
+        } catch (PDOException $e) {
+            echo json_encode(['success' => false, 'error' => '閲覧履歴取得エラー: ' . $e->getMessage()]);
         }
     }
 
