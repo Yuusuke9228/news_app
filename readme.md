@@ -1,10 +1,10 @@
 # ニュースキュレーションアプリ
 
-はてなブックマークの人気記事を収集し、カテゴリー別に表示するSmartNews風のキュレーションアプリケーションです。
+人気記事を収集し、カテゴリー別に表示するSmartNews風のキュレーションアプリケーションです。
 
 ## 機能
 
-- はてなブックマークの人気記事を自動収集
+- 人気記事を自動収集
 - カテゴリー別の記事表示
 - ユーザーごとのカスタマイズ機能
   - カテゴリー表示/非表示の設定
@@ -34,7 +34,7 @@
 1. リポジトリをクローンまたはダウンロードします。
 
 ```bash
-git clone https://github.com/yourusername/news-app.git
+git clone https://github.com/Yuusuke9228/news_app.git
 cd news-app
 ```
 
@@ -54,7 +54,8 @@ mysql -u username -p < db/schema.sql
 4. 設定ファイルを編集します。
 
 ```bash
-cp config.php.example config.php
+cp config_sample.php config.php
+cp config_sample.ini config.ini
 # config.phpを編集して接続情報を設定
 ```
 
