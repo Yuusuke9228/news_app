@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svgjs="http://svgjs.dev/svgjs" width="512" height="512"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- 背景 -->
+  <rect width="512" height="512" rx="100" fill="#1a73e8"></rect>
+  
+  <!-- メインアイコン：新聞紙の形 -->
+  <g transform="translate(80, 80) scale(0.7)">
+    <!-- 新聞の背景 -->
+    <rect x="0" y="0" width="500" height="500" rx="40" fill="white"></rect>
+    
+    <!-- 新聞の折り目 -->
+    <path d="M400,0 L400,500 L460,440 L460,60 Z" fill="#f0f0f0"></path>
+    
+    <!-- ヘッドライン -->
+    <rect x="50" y="80" width="300" height="40" rx="5" fill="#333"></rect>
+    
+    <!-- テキストライン -->
+    <rect x="50" y="140" width="350" height="20" rx="5" fill="#666"></rect>
+    <rect x="50" y="170" width="300" height="20" rx="5" fill="#666"></rect>
+    <rect x="50" y="200" width="330" height="20" rx="5" fill="#666"></rect>
+    
+    <!-- サブヘッドライン -->
+    <rect x="50" y="250" width="200" height="30" rx="5" fill="#333"></rect>
+    
+    <!-- テキストライン -->
+    <rect x="50" y="300" width="350" height="20" rx="5" fill="#666"></rect>
+    <rect x="50" y="330" width="280" height="20" rx="5" fill="#666"></rect>
+    <rect x="50" y="360" width="320" height="20" rx="5" fill="#666"></rect>
+  </g>
+</svg><style>@media (prefers-color-scheme: light) { :root { filter: none; } }
+@media (prefers-color-scheme: dark) { :root { filter: none; } }
+</style></svg>
